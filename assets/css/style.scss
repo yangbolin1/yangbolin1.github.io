@@ -1,0 +1,9 @@
+---
+---
+@import "{{ site.theme }}";
+
+// 将包裹内容的容器修改为靠左对齐，并保留左边距
+.wrapper {
+  margin-left: 5% !important; /* 距离浏览器最左侧留出 5% 的空白，可根据需要调整 */
+  margin-right: auto !important;
+}
