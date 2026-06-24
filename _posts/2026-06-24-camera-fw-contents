@@ -1,3 +1,10 @@
+---
+title: AOSP 源码骨架详解
+date: 2026-06-24 12:00:00 +0800
+categories: [Camera, Framework]
+tags: [camera, android]
+---
+
 **“AOSP 源码骨架大体检”**。
 
 对于不熟悉系统源码的开发者来说，Android 源码就像一个庞大的迷宫，各种缩写目录（如 `av`、`base`、`ex`、`hardware`）让人摸不着头脑。
