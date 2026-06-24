@@ -2,3 +2,6 @@ title: Camera Learning Lab
 description: Android Camera / CameraX / Camera2 / 图像处理学习记录
 theme: minima
 author: yangbolin1
+
+header_pages:
+  - about.md
