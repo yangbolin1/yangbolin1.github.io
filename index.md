@@ -271,7 +271,6 @@ title: Camera Learning Lab - Yang Bolin
   align-items: center;
   gap: 4px;
 }
-
 </style>
 
 <!-- ================= 1. HERO BANNER 区 ================= -->
@@ -296,19 +295,16 @@ title: Camera Learning Lab - Yang Bolin
 <div class="car-lab-section">
   <h2 class="section-title">🚗 车载 Camera 核心实战战地</h2>
   <div class="car-grid">
-    <!-- 卡片 1 -->
     <div class="car-card">
       <span class="card-icon">📹</span>
       <h3>智能 DVR (行车记录仪)</h3>
       <p>基于 <b>TP2856</b> 的 4 路 AHD 模拟高清汇聚采集方案。打通瑞芯微 <b>RK-CIF</b> 驱动，配置 MIPI 虚拟通道接收，实现超高稳定性的多路 YUV 并行硬件 MPP 编码录像。</p>
     </div>
-    <!-- 卡片 2 -->
     <div class="car-card">
       <span class="card-icon">🔄</span>
       <h3>360 AVM (全景环视)</h3>
       <p>控制 4 路广角摄像头帧同步采集。优化 HAL3 内存机制，利用 <b>OpenGL ES OES 外部纹理</b> 与 EGLImage 扩展实现 0 次 CPU 拷贝，为 3D 环视算法输送极致性能的数据流。</p>
     </div>
-    <!-- 卡片 3 -->
     <div class="car-card">
       <span class="card-icon">🧠</span>
       <h3>AI 视觉对接 (ADAS/BSD)</h3>
@@ -355,7 +351,6 @@ title: Camera Learning Lab - Yang Bolin
 <div class="posts-section">
   <h2 class="section-title">📝 最新技术沉淀</h2>
   <div class="post-card-list">
-    <!-- Jekyll 自动文章循环开始 -->
     {% for post in site.posts %}
     <a href="{{ post.url | relative_url }}" class="post-item-card">
       <div class="post-meta-left">
@@ -374,6 +369,5 @@ title: Camera Learning Lab - Yang Bolin
       </div>
     </a>
     {% endfor %}
-    <!-- Jekyll 自动文章循环结束 -->
   </div>
 </div>
