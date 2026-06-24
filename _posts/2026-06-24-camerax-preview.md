@@ -1,9 +1,8 @@
 ---
-layout: post
-title: "Android Camera 全栈开发从零到精通学习大纲"
-date: 2026-06-24
-categories: Camera
-tags: [Android, Camera, Camera]
+title: Android Camera 全栈开发从学到精通学习大纲
+date: 2026-06-24 12:00:00 +0800
+categories: [Camera, Framework]
+tags: [camera, android, hal3]
 ---
 
 # 📖 Android Camera 全栈开发从零到精通——“像素级”超级学习大纲
