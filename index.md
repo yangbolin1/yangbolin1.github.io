@@ -1,8 +1,7 @@
 ---
-
 layout: home
 title: Camera Learning Lab
---------------------------
+---
 
 # Camera Learning Lab
 
