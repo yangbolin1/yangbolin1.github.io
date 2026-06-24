@@ -39,31 +39,13 @@ title: Camera Learning Lab
 * YUV
 * NV21
 * JPEG
-* RAW
 * Bitmap
 * ImageReader 数据解析
 
-### 渲染与性能
-
-* SurfaceView
-* TextureView
-* OpenGL ES
-* 预览卡顿分析
-* 内存优化
-* 拍照耗时优化
-
 ### Bug 排查
 
-* 黑屏问题
+* 预览黑屏
 * 预览变形
 * 图片旋转错误
 * 拍照崩溃
 * 不同手机兼容性问题
-
-## 最近目标
-
-我希望通过持续记录，把 Camera 学习过程整理成一套完整的知识体系：
-
-1. 先理解 CameraX 的基本使用
-2. 再深入 Camera2 的底层流程
-3. 最后结合图像处理和项目实战做完整总结
