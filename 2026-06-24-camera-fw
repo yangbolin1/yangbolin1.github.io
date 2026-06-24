@@ -1,0 +1,226 @@
+同学，既然你要求**越详细好，越深入越好**，那我们今天就彻底来一次**“AOSP 源码骨架大体检”**。
+
+对于不熟悉系统源码的开发者来说，Android 源码就像一个庞大的迷宫，各种缩写目录（如 `av`、`base`、`ex`、`hardware`）让人摸不着头脑。
+
+这堂课，我将为你提供一份**像素级的 AOSP 源码目录全景解构指南**。我们将以 **RK3562 车机（DVR/360环视）** 为锚点，深入拆解 AOSP 中每一个与 Camera、图形、音视频编解码相关的文件夹，搞清楚它们**“叫什么”**、**“放什么”**、**“怎么编译”**、以及**“如何跟你的车机硬件（TP2856/TP9951）产生联系”**。
+
+建议将本节课作为你在开发和阅读源码时的**终极字典**。
+
+---
+
+# 📖 第一阶段：第 1 课（目录深度结构篇） —— AOSP 源码骨架与 Camera/多媒体核心文件夹像素级解构
+
+为了看懂控制流和数据流，我们首先必须对整座 AOSP 源码大楼的“房间功能”了如指掌。下面是 Android 源码中与 Camera、图形、编解码相关的最完整目录树：
+
+---
+
+## 🗺️ 一、 AOSP 核心多媒体/Camera 目录全景树
+
+```text
+AOSP_Root/ (源码根目录)
+├── frameworks/ (系统框架层：Java核心、多媒体服务、系统扩展)
+│   ├── base/ (最庞大的Java框架和JNI桥梁)
+│   │   ├── core/java/android/hardware/camera2/ (Camera2 Java API)
+│   │   ├── core/jni/ (JNI 翻译官：C++实现)
+│   │   ├── media/java/android/media/ (MediaCodec/MediaRecorder Java层)
+│   │   └── services/core/java/com/android/server/ (系统服务，如 CameraService 的生命周期管理)
+│   ├── av/ (音视频 C++ 核心发动机)
+│   │   ├── camera/ (libcamera_client.so，Native 客户端代理)
+│   │   ├── services/camera/libcameraservice/ (cameraserver 核心：控制大脑)
+│   │   └── media/ (Stagefright 编解码、Rockchip MPP 对接层)
+│   └── ex/ (系统扩展库)
+│       └── camera2/ (提供 Camera2 的一些通用辅助、兼容性包装工具库)
+├── hardware/ (Google 官方硬件抽象层接口标准)
+│   ├── interfaces/ (HIDL / AIDL 接口定义：.hal 和 .aidl 文件)
+│   │   └── camera/ (定义了 ICameraDeviceSession 等核心接口规范)
+│   └── libhardware/ (老旧的直通式 HAL1/HAL2 头文件定义)
+├── system/ (底层基础设施)
+│   ├── core/ (智能指针 sp/wp、Binder 驱动接口 libbinder、系统 Log 工具)
+│   └── memory/ (ION / dma-buf 物理内存分配基础设施)
+├── vendor/ (芯片厂商的专属黑盒分区)
+│   └── rockchip/ (瑞芯微 RK3562 的 Camera HAL3 闭源/开源适配层实现)
+├── device/ (产品硬件板级配置)
+│   └── rockchip/rk3562/ (编译配置、设备树 DTS、权限初始化 rc 脚本)
+└── out/ (编译输出垃圾场/藏宝阁)
+    └── soong/.intermediates/ (编译期间自动生成的 AIDL/HIDL C++ 桩代码文件)
+```
+
+---
+
+## 🔍 二、 各大核心分组文件夹的像素级细节深挖
+
+下面我们对每一个核心文件夹进行“显微镜级”剖析。
+
+---
+
+### 1. `frameworks/base/` —— 系统级的 Java 门面与 JNI 翻译官
+这个文件夹是 Android 系统的“大堂”，包含了所有暴露给 App 开发者的 Java 类，以及对应的 JNI 实现。
+
+#### A. Java Camera2 核心 API
+*   **绝对路径**：`frameworks/base/core/java/android/hardware/camera2/`
+*   **具体职责**：
+    *   这里是我们在应用层调用的 `CameraManager`、`CameraDevice`、`CameraCaptureSession`、`CaptureRequest` 的 Java 源码。
+    *   **核心类关系**：`CameraDevice` 只是一个抽象类，它的真正逻辑在 `impl/CameraDeviceImpl.java` 中。`CameraDeviceImpl` 内部有一个嵌套类 `CameraDeviceCallbacks`，它继承自 `ICameraDeviceCallbacks.Stub`。这是一个 **Binder 服务端**，专门用来接收来自 C++ 层 `cameraserver` 传回来的诸如“相机已打开”、“拍照已完成”等异步回调。
+*   **编译产物**：编译进 `framework.jar`，存在于车机的 `/system/framework/` 中，所有 Java App 启动时会自动加载。
+
+#### B. JNI 桥梁层
+*   **绝对路径**：`frameworks/base/core/jni/`
+*   **具体职责**：
+    *   **`android_hardware_camera2_CameraUtils.cpp`**：负责将 C++ 层的错误码（如 `BAD_VALUE`、`PERMISSION_DENIED`）转换为 Java 层的异常抛出（如 `IllegalArgumentException`）。
+    *   **`android_hardware_camera2_CameraMetadata.cpp`**：
+        *   Java 层的 `CameraMetadataNative` 类在底层其实并不存储数据。它在 C++ 层面对应一个 `CameraMetadata` 对象。
+        *   JNI 层的核心任务就是提供 `nativeWriteToParcel` 和 `nativeReadFromParcel`。当 App 要发送曝光参数时，JNI 负责把 C++ 的内存块序列化为 Binder 的 `Parcel` 包。
+*   **编译产物**：编译进 `libandroid_runtime.so`，车机路径为 `/system/lib64/libandroid_runtime.so`。
+
+---
+
+### 2. `frameworks/av/` —— 多媒体 C++ 核心发动机
+在 Android 中，`av` 是 Audio/Video 的缩写。**这是多媒体底层系统开发的主战场**。这一层没有任何 Java 代码，全是高性能的 C++。
+
+#### A. Native 客户端代理：`libcamera_client`
+*   **绝对路径**：`frameworks/av/camera/`
+*   **具体职责**：
+    *   虽然名字叫 `camera`，但它并不是服务，而是**给框架层（JNI）调用的 C++ 客户端动态链接库**。
+    *   **核心文件**：
+        *   `CameraMetadata.cpp`：C++ 版本的元数据容器。
+        *   `android/hardware/ICameraService.aidl` 自动生成的 C++ 代理类（`BpCameraService`）就在这里被使用。
+    *   **车机 DVR 关键点**：当你的 DVR 进程想通过底层 C++ 接口拿数据时，你的 Native 应用（不走 Java）可以直接链接 `libcamera_client.so`，直接在 C++ 层去打开相机，绕过 Java 层，极大地节省内存。
+*   **编译产物**：`libcamera_client.so`，存在于车机的 `/system/lib64/` 目录。
+
+#### B. 系统核心控制大脑：`libcameraservice`
+*   **绝对路径**：`frameworks/av/services/camera/libcameraservice/`
+*   **具体职责**：
+    *   **管理所有相机的全局状态**：哪个 App 打开了哪个 Camera，当前分配了多少路 Buffer。
+    *   **核心类关系深挖**：
+        *   `CameraService.cpp`：继承自 `BnCameraService`。它是整个 `cameraserver` 进程的入口和管理者。
+        *   `CameraDeviceClient.cpp`：当一个 App 连接上 Camera2 后，`CameraService` 会为它单独创建一个 `CameraDeviceClient` 对象。这个对象负责接收 App 的 `submitRequest` 指令，并把它推入 `Camera3Device` 的队列。
+        *   `device3/Camera3Device.cpp`：**核心控制枢纽**。它负责把多路的 `CaptureRequest` 转换成底层 HAL3 协议需要的 `camera3_capture_request_t` 结构体。
+        *   `device3/Camera3OutputStream.cpp`：对应 App 传下来的一路 `Surface`。它负责向 App 端的 `BufferQueue` 提取（`dequeue`）和归还（`queue`）图像内存。
+        *   `common/CameraProviderManager.cpp`：**极其重要**。它是 `cameraserver` 与底层的 `android.hardware.camera.provider` 进程交谈的代理。它负责通过 AIDL 接口发现底层的芯片厂 HAL 驱动，并把它们包装成 C++ 的 `CameraProviderInfo` 对象。
+*   **编译产物**：可执行二进制文件 `/system/bin/cameraserver` 和核心库 `/system/lib64/libcameraservice.so`。
+
+#### C. 音视频编解码器：`media/libstagefright/`
+*   **绝对路径**：`frameworks/av/media/libstagefright/`
+*   **针对你的 DVR 项目**：
+    *   DVR 需要 24 小时不断地把 1080P/720P 图像压成 H.264/H.265 文件保存。
+    *   `libstagefright` 是 Android 的多媒体框架，它内部实现了 **`OMX`** 和 **`Codec2`** 编解码框架。
+    *   在这里，瑞芯微提供了其专有的硬件加速解码接口（**Rockchip MPP**）。图像数据通过 `BufferQueue` 绕过 CPU，直接从 Camera 塞进 MPP 进行硬件编码，最后压成 MP4 文件。
+
+---
+
+### 3. `frameworks/ex/` —— 框架层扩展工具箱
+*   **绝对路径**：`frameworks/ex/`
+*   **具体职责**：
+    *   `ex` 代表 **Extension（扩展）**。
+    *   `frameworks/ex/camera2/portability/` 主要是提供了一套包装工具，能够把 Camera1 和 Camera2 API 包装成统一的接口，方便一些老旧的应用做向下兼容。在你的底层开发中，一般不需要去修改这个文件夹下的代码。
+
+---
+
+### 4. `hardware/` —— 官方硬件抽象接口（系统的“契约书”）
+这个文件夹规定了“Android 操作系统”和“物理硬件（如瑞芯微芯片、高通芯片）”之间交谈的**标准普通话**。
+
+#### A. 硬件接口定义（AIDL / HIDL）
+*   **绝对路径**：`hardware/interfaces/camera/`
+*   **具体职责**：
+    *   在 Android 12 以上系统，采用 **AIDL** 规范。
+    *   **核心定义文件**：
+        *   `device/aidl/android/hardware/camera/device/ICameraDevice.aidl`
+        *   `device/aidl/android/hardware/camera/device/ICameraDeviceSession.aidl`
+    *   **车机开发认知**：这里**没有任何逻辑代码**，只有接口描述。Google 规定：任何芯片厂（高通、联发科、瑞芯微）如果想让你的 Camera 驱动运行在 Android 系统上，你的驱动进程必须实现这些接口。
+
+---
+
+### 5. `vendor/rockchip/` 与 `hardware/rockchip/` —— 瑞芯微（RK3562）的秘密基地
+这是瑞芯微作为芯片厂商，根据 Google 在 `hardware/interfaces/` 里制定的契约，做出的**具体硬件实现**。这是你作为底层/车机开发者的主攻方向之一。
+
+*   **绝对路径**：`hardware/rockchip/camera/` 或者是 `hardware/rockchip/camera_hal/`（具体取决于瑞芯微 BSP 源码包的组织结构）。
+*   **具体职责**：
+    *   **实现 `ICameraDeviceSession`**：实现了 C++ 层的 `processCaptureRequest`。
+    *   **针对 TP2856 / TP9951（AHD模拟高清解码芯片）的车机适配**：
+        *   因为 AHD 摄像头输出的是标准的 **YUV422 / UYVY** 格式，不需要经过 RK3562 复杂的 ISP（图像信号处理）算法（如去噪、坏点校正等）。
+        *   所以，瑞芯微在这里的代码会判断：如果检测到连接的是 TP2856/TP9951，它会跳过 `librkisp.so`（ISP库），直接通过 Linux V4L2 系统调用，去读取 **/dev/video\*（RK-CIF 驱动节点）**。
+*   **编译产物**：`/vendor/lib64/hw/camera.device@3.x-impl.so` 和 `/vendor/bin/hw/android.hardware.camera.provider@2.x-service` 厂商进程。
+
+---
+
+### 6. `device/rockchip/rk3562/` —— 你的车机板级配置与编译指挥部
+这是一个纯配置文件夹，决定了你的车机固件（ROM）是如何组装起来的。
+
+*   **核心配置文件**：
+    *   **`device.mk`**：在这里决定车机编译时，要把哪些 Camera 库打包进固件：
+        ```makefile
+        # 声明系统支持相机硬件
+        PRODUCT_COPY_FILES += \
+            frameworks/native/data/etc/android.hardware.camera.xml:system/etc/permissions/android.hardware.camera.xml
+        
+        # 编译瑞芯微 Camera HAL 模块
+        PRODUCT_PACKAGES += \
+            android.hardware.camera.provider@2.4-impl \
+            camera.device@3.2-impl
+        ```
+    *   **`manifest.xml`**：系统的“自我介绍信”。在这里写明当前板子支持哪些硬件抽象层：
+        ```xml
+        <hal format="aidl">
+            <name>android.hardware.camera.provider</name>
+            <transport>hwbinder</transport>
+            <version>2.4</version>
+        </hal>
+        ```
+    *   **`init.rk3562.rc`**：系统启动脚本。在这里配置 Camera HAL 进程启动时的特权：
+        ```rc
+        # 赋予 Camera 进程读取内核 video 节点的权限
+        chmod 0660 /dev/video0
+        chown media camera /dev/video0
+        ```
+
+---
+
+### 7. `out/` —— 自动生成与编译的“藏宝阁”
+很多刚接触底层的同学会崩溃：*“为什么我在 `frameworks/av/` 看到好几个类（如 `aidl::android::hardware::camera::device::CaptureRequest`），在整套源码里用全局搜索都找不到定义它的 `.h` 或 `.cpp` 文件？”*
+
+*   **原理**：因为它们是**编译期间由 AIDL 编译器自动生成**的。
+*   **藏宝路径**：
+    `out/soong/.intermediates/hardware/interfaces/camera/device/aidl/`
+*   在这里，你会发现自动生成的：
+    *   `ICameraDeviceSession.h`
+    *   `ICameraDeviceSession.cpp`
+*   **开发技巧**：当你想知道底层的某个 AIDL 接口到底长什么样时，去 `out/` 目录找自动生成的头文件，比直接看 `.aidl` 要直观得多！
+
+---
+
+## 🛠️ 三、 终极演练：控制命令（`setRepeatingRequest`）在这些文件夹之间的流转时序图
+
+为了让你彻底看清这几个核心文件夹（`frameworks/base` ➔ `frameworks/av` ➔ `hardware` ➔ `vendor`）之间是如何“接力”的，我们来看当你（App 层）调用 `setRepeatingRequest()` 开启预览时，代码是如何在这几个大分组文件夹中流转的：
+
+```text
+ 1. 【frameworks/base/ (Java 框架层)】
+    App 调用 setRepeatingRequest() 
+      --> 路由到 impl/CameraDeviceImpl.java 的 submitCaptureRequest()
+        --> 调用核心代理 ICameraDeviceUser.submitRequestList()
+             │
+             ▼ (跨进程：Java Binder)
+ 2. 【frameworks/av/ (C++ 系统服务层)】
+    进入 cameraserver 进程的 libcameraservice.so：
+      --> api2/CameraDeviceClient.cpp 捕获 submitRequestList() 
+        --> 转换为 C++ 层的 sp<CaptureRequest>
+          --> 将请求塞入 device3/Camera3Device.cpp 的 RequestThread 线程队列中
+               │
+               ▼ (RequestThread 环唤醒，准备向底层派发)
+ 3. 【out/soong/.intermediates/ (编译生成层)】
+    调用编译生成的 BpCameraDeviceSession::processCaptureRequest() 
+         将参数序列化为 Parcel
+             │
+             ▼ (跨进程：Native Binder / AIDL)
+ 4. 【vendor/rockchip/ (瑞芯微 HAL 层实现)】
+    进入运行在 vendor 分区的 Provider 进程：
+      --> hardware/rockchip/camera/camera_hal/Camera3DeviceSession.cpp 
+        --> 捕获 processCaptureRequest()
+          --> 提取参数，直接调用 Linux ioctl(mCameraFd, VIDIOC_QBUF, ...) 
+               │
+               ▼ (进入内核空间)
+ 5. 【kernel/ (Linux 内核层)】
+    rk_cif 驱动响应 ioctl，启动硬件 DMA，把 TP2856 采集的图像无缝写入 GraphicBuffer 内存！
+```
+
+---
+
