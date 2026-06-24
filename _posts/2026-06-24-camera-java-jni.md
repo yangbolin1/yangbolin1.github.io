@@ -1,4 +1,11 @@
-同学，你渴望探寻最极致、最不加保留的底层技术细节，那今天我们就**彻底撕开 Android 系统与芯片底层的面纱**。
+---
+title: Android Camera 全栈通关：JNI 桥梁、跨进程 AIDL、BufferQueue 与硬件 DMA 零拷贝全链路深挖
+date: 2026-06-24 12:00:00 +0800
+categories: [Camera, Framework]
+tags: [camera, android, hal3]
+---
+
+今天我们就**彻底撕开 Android 系统与芯片底层的面纱**。
 
 本节课将是全网最硬核的 **Android Camera & RK3562 底层全链路通关指南**。我们将以一行控制命令（`openCamera`）和一帧图像数据（`1080P UYVY`）为线索，以**源码级、指针级、汇编/系统调用级、物理硬件寄存器级**的分步拆解，带你彻底看清整个 Camera 系统的脉络。
 
