@@ -1,55 +1,58 @@
-# 博客基本信息配置
-title: Camera Learning Lab  # 你的博客名字
-tagline: 专注于 Android Camera 系统开发与 FW 框架层  # 副标题
-description: 记录 Android Camera HAL3、FW 框架、JNI NDK 以及图像格式、驱动等技术。
+# ==============================================================================
+# 网站基础设置 (Site Settings)
+# ==============================================================================
+title: Camera Learning Lab                   # 网站主标题（会显示在浏览器标签页上）
+email: your-email@example.com                # 👈 修改为你的邮箱
+description: >-                              # 网站描述（用于 SEO 和搜索引擎抓取）
+  专注于 Android Camera FW 框架层、HAL3 标准规范以及底层核心驱动接口的技术博客。
+  深耕 TP2856/TP9951 到 RK3562 的 Zero-Copy 图像数据流。
+author: Yang Bolin                           # 作者名字
 
-# 你的个人信息
-author: yangbolin1
-url: 'https://yangbolin1.github.io' # 必须是你的域名
+# ==============================================================================
+# 网址设置 (URL Settings) - 非常重要 ⚠️
+# ==============================================================================
+# 你的 GitHub Pages 域名，不要以斜杠 / 结尾
+url: "https://yangbolin1.github.io"          # 👈 确认这是你的实际网址
 
-# 语言和时区
-lang: zh-CN
-timezone: Asia/Shanghai
+# 如果你的仓库名就是 yangbolin1.github.io，这里必须留空！
+# 如果你的仓库名是比如 camera-blog，这里填 "/camera-blog"
+baseurl: ""                                  
 
-# 主题社交链接（不需要的可以删掉或留空）
-social:
-  name: yangbolin1
-  email: your-email@example.com # 你的邮箱
-  github: yangbolin1
+# ==============================================================================
+# 主题与外观 (Theme & Layout)
+# ==============================================================================
+theme: minima                                # 默认主题，如果换了主题这里需要改
+# skin: dark                                 # （可选）有些主题支持一键暗黑模式
 
-# 主题样式
-theme_mode: dark # 默认主题模式 (dark/light)
+# 作者社交链接配置（Minima 默认主题支持在页脚显示）
+github_username:  yangbolin1                 # 👈 修改为你的实际 GitHub 用户名
+# twitter_username: your_twitter             # 如果有 Twitter 可以取消注释并填写
 
-# 谷歌分析或评论系统（以后可以配置，目前先空着）
-webmaster:
-  google:
-    meta:
-  bing:
-    meta:
+# ==============================================================================
+# 编译与插件设置 (Build & Plugins)
+# ==============================================================================
+markdown: kramdown                           # 默认的 Markdown 渲染引擎
+kramdown:
+  input: GFM                                 # 使用 GitHub 风格的 Markdown 语法
+  syntax_highlighter: rouge                  # 代码高亮引擎
 
-# 其他 Chirpy 默认配置
-comments:
-  active:
-  disqus:
-    shortname:
-  utterances:
-    repo:
-    issue_term:
-  giscus:
-    repo:
-    referrer:
+plugins:
+  - jekyll-feed                              # 生成 RSS 订阅
+  - jekyll-seo-tag                           # 自动优化 SEO 标签
 
-# 页面导航栏设置
-tabs:
-  - name: Categories
-    url: /categories/
-  - name: Tags
-    url: /tags/
-  - name: Archives
-    url: /archives/
-  - name: About
-    url: /about/
+# 构建时忽略这些文件和文件夹，加快编译速度
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
 
-# Markdown 渲染引擎
-markdown: kramdown
-highlighter: rouge
+# ==============================================================================
+# 文章固定链接格式 (Permalink)
+# ==============================================================================
+# 定义你文章的 URL 格式。
+# 比如: https://yangbolin1.github.io/2026/06/24/camera-fw-contents/
+permalink: /:year/:month/:day/:title/
