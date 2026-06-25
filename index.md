@@ -24,7 +24,7 @@ title: "Camera Learning Lab - Yang Bolin"
 | :--- | :--- |
 | 🚀 **应用与 FW 层** | `Camera2 / CameraX` 控制栈深度定制<br>`cameraserver` 核心服务与跨进程通信管理<br>`JNI` 数据强转与脱壳处理<br>多应用并发下的 Camera 权限抢占策略 |
 | ⚙️ **HAL & 驱动层** | `Camera HAL3 (AIDL/HIDL)` 接口实现与优化<br>`BufferQueue` 状态机复杂流转机制<br>`V4L2` 驱动底层机制与自定义 `ioctl`<br>`MIPI Virtual Channel` 数据分离 |
-| 🧲 **底层控制与硬件** | `ION / Gralloc` 跨模块内存共享机制<br>`dma-buf` 零拷贝技术全链路打通<br>`TP2856 / TP9951` 视频解码芯片寄存器级调试<br>`NPU` 内存直接映射与 AI 推理加速 |
+| 🧲 **底层控制与硬件** | `ION / Gralloc` 跨模块内存共享机制<br>`dma-buf` 零拷贝技术全链路打通<br> 视频解码芯片寄存器级调试<br>`NPU` 内存直接映射与 AI 推理加速 |
 
 ---
 
