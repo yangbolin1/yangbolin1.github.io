@@ -12,7 +12,7 @@ title: "Camera Learning Lab - Yang Bolin"
 
 > 👋 **你好，我是 Yang Bolin。**
 > 
-> 致力于打通从camera图像采集至 NPU 神经网络（RK3562）的极速**零拷贝（Zero-Copy）**数据管道。深耕 Android Camera FW 框架层、HAL3 标准规范以及底层核心驱动接口。
+> 致力于打通从camera图像采集至 NPU 神经网络的极速**零拷贝（Zero-Copy）**数据管道。深耕 Android Camera FW 框架层、HAL3 标准规范以及底层核心驱动接口。
 
 ---
 
