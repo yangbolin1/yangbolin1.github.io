@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: home
 title: "Camera Learning Lab - Yang Bolin"
 ---
 
