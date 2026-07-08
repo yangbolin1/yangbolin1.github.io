@@ -1,225 +1,222 @@
 ---
 layout: post
-title: "深入底层：Android Camera Framework 源码解析（四）—— 结合 Android 16 源码解剖 Session 家族"
+title: "深入底层：Android Camera Framework 源码硬核解析（四）—— 全链路解剖 Session 家族与底层创建机制 (基于 Android 16)"
 date: 2026-07-10 10:00:00 +0800
 categories: [Android底层, 源码解析]
-tags: [Camera2, Framework, Session, 源码导读]
+tags: [Camera2, Framework, Session, C++, 架构设计]
 ---
 
 > **📝 导读**
-> 从 Camera1 迁移到 Camera2 的开发者常有一个痛点：为什么不能直接 `startPreview()`，非要繁琐地配置 Surface 并创建一个 `Session`（会话）？
+> 从 Camera1 迁移到 Camera2 的开发者常有一个痛点：为什么不能直接 `startPreview()`，非要繁琐地配置 `Surface` 并创建一个 `Session`（会话）？
 > 
-> 在 `frameworks/base/.../camera2/` 目录下，竟然存在着四五种不同的 Session 类。它们究竟有何不同？
-> 今天，我们将化身“高级水管工”，翻开最新的 **Android 16 源码**，结合真实代码片段，带你彻底搞懂 Camera2 框架中最核心的数据路由中枢 —— **Session 家族**。
+> 如果你打开 Android 源码的 `frameworks/base/.../camera2/` 目录，你会发现里面竟然存在着四五种不同的 Session 类。它们究竟有何不同？底层到底是怎么实现的？
+> 
+> 今天，我们将化身“高级水管工”，翻开最新的 **Android 16 源码**，从宏观的**四大 Session 家族形态**，一路向下击穿 Framework，直达底层的 **C++ cameraserver 进程**，为你揭开“搭建图像数据流水线”的终极秘密！
 
 ---
 
-## 🤔 核心拷问：为什么必须有 Session？
+## 🤔 第一部分：核心拷问 —— 为什么必须有 Session？
 
 **大白话比喻：**
 `CameraDevice`（相机硬件）就像是一个巨大的水库，里面有源源不断的水（图像数据）。
-你的 App 里的 `SurfaceView` 或 `MediaRecorder`，就像是你家里的各种水龙头。
+你的 App 里的 `SurfaceView` 或 `ImageReader`，就像是你家里的各种水龙头和洗衣机。
 **`Session` (会话)，就是连接水库和你家水龙头的那套“地下自来水管道系统”。**
 
 **为什么不能即插即用？**
-因为高清图像（如 4K/60fps）的数据量极其庞大！在通水之前，底层 C++ (`cameraserver`) 必须提前知道：你有几个水龙头？每个水龙头管径多大（分辨率、格式）？
-底层需要根据这些信息，在内存中精准分配 `GraphicBuffer` 共享内存。**Session 的创建过程，实质上就是底层硬件分配内存、搭建流水线的握手过程。**
+因为高清图像（如 4K/60fps）的数据量极其庞大！在通水之前，底层的 C++ (`cameraserver`) 必须提前知道：
+1. 你有几个水龙头？
+2. 每个水龙头管径多大（分辨率、数据格式是什么）？
 
-理解了前提，我们来看 Android 16 源码中的四大王牌“管道”。
+底层需要根据这些信息，在系统的内存中精准分配 `GraphicBuffer`（共享物理内存）。**Session 的创建过程，实质上就是底层硬件分配内存、搭建流水线的握手协商过程。如果不建 Session 直接通水，系统内存直接崩溃！**
+
+理解了前提，我们先来看看 Android 16 源码中，为了应对不同的业务场景，演化出了哪四大王牌“管道”。
 
 ---
 
-## 🚰 一、标准自来水管：`CameraCaptureSessionImpl`
+## 🚰 第二部分：Session 家族的四大王牌形态
 
+为了应对日常预览、240fps高刷、计算摄影和后台处理，Google 在 Framework 层采用了**策略模式**，派生出了四种极其特殊的 Session。
+
+### 1. 标准自来水管：`CameraCaptureSessionImpl`
 这是绝对的主力军，平时 90% 的预览和拍照都在用它。
 
-在 Android 16 源码中，当你调用 `setRepeatingRequest`（开启连续预览）时，它在内部是如何流转的？
-
-#### 💻 Android 16 源码剖析
+**💻 源码剖析：** 当你调用 `setRepeatingRequest`（开启连续预览）时：
 ```java
 // 源码位置：CameraCaptureSessionImpl.java
 
 @Override
-public int setRepeatingRequest(CaptureRequest request, CaptureCallback callback, Handler handler) 
-        throws CameraAccessException {
-        
-    // 1. 基础校验与线程包装
-    checkRepeatingRequest(request);
+public int setRepeatingRequest(CaptureRequest request, CaptureCallback callback, Handler handler) {
     // 💡 Android 16 强推 Executor，对老旧的 Handler 进行封装降级
     Executor executor = (handler == null) ? mStateExecutor : new HandlerExecutor(handler);
 
     synchronized (mDeviceImpl.mInterfaceLock) {
-        // 2. 检查管道状态，如果你已经把管道关了，直接报错
         checkNotClosed();
-
-        // 3. 把请求转交给大老板 CameraDeviceImpl 去处理
-        // 注意：Session 本身不直接跨进程，它只是个管理者！
+        // 甩手掌柜：将请求转交给大老板 CameraDeviceImpl 去排队
         return mDeviceImpl.submitCaptureRequest(
-                new CaptureRequest[] { request }, // 打包成数组
-                callback, 
-                executor, 
-                true /* isRepeating */); // 告诉底层这是连拍！
+                new CaptureRequest[] { request }, 
+                callback, executor, true /* isRepeating: 告诉底层这是连拍！*/); 
     }
 }
 ```
 
-> **📌 源码解析：**
-> 标准 Session 其实是个“甩手掌柜”。它校验完状态后，会将任务交回给 `mDeviceImpl`，由其压入任务队列，并通过 Binder 发送给底层。底层的 ISP 收到 `isRepeating = true` 的指令后，就会像水泵一样，每秒 30 次源源不断地向你的 Surface 吐出数据。
+### 2. 高铁专用管：`CameraConstrainedHighSpeedCaptureSessionImpl`
+**痛点**：拍 240fps 慢动作时，每帧处理时间只有 4 毫秒！如果一帧帧发请求，Java 和 C++ 频繁的 Binder IPC 跨进程通信绝对会导致 CPU 爆表。
+**解法**：开启 `BatchedOutputs` (批量发车机制)。
 
----
-
-## 🚄 二、高铁专用管：`CameraConstrainedHighSpeedCaptureSessionImpl`
-
-**痛点场景：**
-如果你要拍 **240fps 慢动作视频**，每一帧处理时间只有可怜的 **4 毫秒**！如果用上面的标准水管，Java 和 C++ 每秒要进行 240 次 Binder 跨进程通信，频繁的上下文切换绝对会导致 CPU 爆表、画面卡顿。
-
-#### 💻 Android 16 源码剖析：打包发车机制
-为了压榨极限性能，系统引入了高速 Session。它有一个极其霸道的核心方法：`createHighSpeedRequestList`。
-
+**💻 源码剖析：**
 ```java
 // 源码位置：CameraConstrainedHighSpeedCaptureSessionImpl.java
 
 @Override
-public List<CaptureRequest> createHighSpeedRequestList(CaptureRequest request) 
-        throws CameraAccessException {
-        
-    // 1. 检查你的请求是否合规（高铁上不准带违禁品！）
-    // 高速模式下，系统会强行禁用复杂的算法（如降噪、光学防抖等）以保速度
-    checkHighSpeedRequest(request);
-
-    // 2. 💡 核心机制：BatchedOutputs (批量发车)
-    // 根据底层的 FPS 要求，计算一次需要打包多少帧（通常是 4 帧或 8 帧）
-    int requestListSize = mHighSpeedRequestSize; // 假设是 8
-    
+public List<CaptureRequest> createHighSpeedRequestList(CaptureRequest request) {
+    // 💡 核心机制：一次性打包多帧（比如 8 帧）
+    int requestListSize = mHighSpeedRequestSize; 
     List<CaptureRequest> requestList = new ArrayList<>(requestListSize);
 
-    // 3. 强行克隆并魔改你的 Request
     for (int i = 0; i < requestListSize; i++) {
         CaptureRequest.Builder builder = new CaptureRequest.Builder(request);
-        
-        // 系统强行锁定 FPS 范围，不让你瞎改
-        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, mHighSpeedFpsRange);
-        
-        // 只有批量请求的最后一帧，才允许触发 UI 回调！极大节省 CPU
-        if (i == requestListSize - 1) {
-            builder.setUpf(CaptureRequest.CONTROL_ENABLE_ZSL, true);
-        }
-        
+        builder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, mHighSpeedFpsRange); // 锁死高帧率
         requestList.add(builder.build());
     }
-    
-    return requestList; // 强制返回一个 List，而不是单个 Request！
+    return requestList; // 强制返回 List，底层 C++ 收到后一次性闷头抓取 8 帧！降低 8 倍 IPC 频次！
 }
 ```
 
-> **📌 源码解析：**
-> 这就是底层优化的极致体现！它**不允许**你一帧一帧地发请求。你必须一次性提交一个 List（比如 8 帧）。底层 C++ 收到后，闷头在极短的时间内连续抓取 8 帧，最后再统一打个包还给 Java 层。
-> **跨进程 IPC 通信频率瞬间降低了 8 倍！这就是慢动作不卡顿的绝对机密！**
+### 3. 魔法滤镜管：`CameraExtensionSessionImpl`
+**痛点**：第三方 App 拍夜景噪点多，无法使用手机原厂自带的“超级夜景”等闭源算法。
+**解法**：Extension OEM 算法代理。
 
----
-
-## 🪄 三、魔法滤镜管：`CameraExtensionSessionImpl`
-
-**痛点场景：**
-第三方 App 拍夜景全是噪点，而华为/小米自带相机拍出来亮如白昼。因为系统自带相机用了原厂的闭源算法！为了打破壁垒，Android 引入了 Extension 机制。
-
-#### 💻 Android 16 源码剖析：OEM 算法代理
-在最新的 Android 16 源码中，当你创建 Extension Session 时，系统会在后台悄悄唤醒手机厂商的系统服务。
-
+**💻 源码剖析：**
 ```java
 // 源码位置：CameraExtensionSessionImpl.java
-
 private void initialize() {
-    try {
-        // 1. 获取厂商的 Extension 代理服务！
-        // 这一步跨进程联系到了手机 OEM（如小米/OV）预埋在系统里的算法进程
-        mExtensionProxy = CameraManagerGlobal.get().getCameraExtensionProxy();
-
-        // 2. 告诉厂商服务：App 请求使用超级夜景 (EXTENSION_NIGHT)
-        mExtensionProxy.initializeSession(mExtensionType, mOutputSurfaces);
-
-        // 3. 截断正常的数据流
-        // 正常：Sensor -> App Surface
-        // 现在：Sensor -> mExtensionProxy (厂商算法处理) -> App Surface
-        setupExtensionImageProcessor();
-
-    } catch (RemoteException e) {
-        Log.e(TAG, "Failed to connect to OEM extension service");
-    }
+    // 1. 获取厂商预埋在系统里的 Extension 算法进程代理！
+    mExtensionProxy = CameraManagerGlobal.get().getCameraExtensionProxy();
+    // 2. 告诉厂商：App 请求开启超级夜景 (EXTENSION_NIGHT)
+    mExtensionProxy.initializeSession(mExtensionType, mOutputSurfaces);
+    // 💡 结果：数据流不再直达 App，而是 Sensor -> mExtensionProxy(提亮/降噪) -> App
 }
 ```
 
-> **📌 源码解析：**
-> 建立这个 Session 后，**数据流的路由被强行改变了**。底层吐出的原始画面，不再直接给你的 App，而是先扔给 `mExtensionProxy`（OEM 私有算法进程）。在那里完成多帧合成、提亮降噪后，一张精美的“算算摄影”大作才会最终流向你的 `SurfaceView`。
+### 4. 离线接力棒：`CameraOfflineSession`
+**痛点**：拍 1 亿像素照片需要处理 3 秒，用户如果按完快门瞬间把 App 杀后台，照片就会丢失。
+**解法**：离线模式，实现进程控制权交接。
 
----
-
-## 🏃 四、接力棒交接：`CameraOfflineSession`
-
-这是 Android 高版本（11~16不断完善）中最具革命性的痛点解法。
-
-**痛点场景：**
-用户拍了一张“1亿像素”或者“超级夜景”，由于算力巨大，需要 3 秒才能出图。但用户是个急性子，按完快门**瞬间就把你的 App 杀了**。以前这种情况下照片直接报废。
-
-#### 💻 Android 16 源码剖析：进程控制权交接
-为了解决防丢图问题，在你的 App 退到后台时，可以向底层申请 `switchToOffline`（切换为离线模式）。
-
+**💻 源码剖析：**
 ```java
 // 源码位置：CameraDeviceImpl.java 
-
 @Override
-public CameraOfflineSession switchToOffline(@NonNull Collection<Surface> offlineOutputs,
-        @NonNull Executor executor, @NonNull CameraOfflineSessionCallback callback) 
-        throws CameraAccessException {
-
-    // 1. 校验哪些画布需要转为离线（比如用于保存图片的 ImageReader 画布）
-    List<Integer> offlineStreamIds = new ArrayList<>();
-    for (Surface surface : offlineOutputs) {
-        offlineStreamIds.add(mConfiguredOutputs.getStreamId(surface));
-    }
-
-    // 2. 跨进程向底层的 C++ cameraserver 发起交接申请
-    ICameraOfflineSession remoteOfflineSession;
-    try {
-        // 🔥 核心爆发点：告诉底层，我 App 不管了，你接管吧！
-        remoteOfflineSession = mRemoteDevice.switchToOffline(
-                mInterface, // 留下通信接口
-                offlineStreamIds.stream().mapToInt(i->i).toArray(),
-                /*out*/ offlineRequestInfo); // 获取接管状态
-                
-    } catch (RemoteException e) {
-        throw new CameraAccessException(CameraAccessException.CAMERA_DISCONNECTED);
-    }
-
-    // 3. 在 Java 层创建一个离线壳子返回给 App
-    CameraOfflineSessionImpl session = new CameraOfflineSessionImpl(
-            mCameraId, remoteOfflineSession, executor, callback);
-
-    return session;
+public CameraOfflineSession switchToOffline(...) {
+    // 🔥 核心爆发点：告诉底层的 C++ cameraserver，我 App 不管了，你接管吧！
+    ICameraOfflineSession remoteOfflineSession = 
+            mRemoteDevice.switchToOffline(mInterface, offlineStreamIds, /*out*/ offlineRequestInfo);
+            
+    // 在 Java 层创建一个离线壳子返回
+    return new CameraOfflineSessionImpl(mCameraId, remoteOfflineSession, executor, callback);
 }
 ```
-
-> **📌 源码解析：**
-> 当 `mRemoteDevice.switchToOffline()` 执行成功后，你的 App 即使彻底被杀掉 (Kill Process) 也没关系了。
-> 框架层完成了一次完美的**“权限与资源交接”**：复杂的图像算法被彻底移交给了系统常驻的 `cameraserver` 进程。系统在后台默默算完后，会直接帮你把照片写入 MediaStore (系统图库)。这不仅是功能创新，更是系统级资源调度的艺术。
+*执行此方法后，App 安心死掉，C++ 系统进程会在后台默默把算法跑完并写入系统图库。*
 
 ---
 
-## 🎯 架构总结：为什么是策略模式？
+## 🔨 第三部分：手撕 Session 创建的底层全链路
 
-看完 Android 16 的硬核源码，我们终于理解了 Google 架构师的苦心：
+上面我们见识了 Session 家族的四大形态。那么，**当我们在 App 里调用 `createCaptureSession` 时，这根水管在底层到底是怎么一步步铺设出来的？**
 
-如果把标准预览、高铁批量模式、OEM 算法代理、离线接管机制... 几万行逻辑全部塞进一个类里，那将是无法维护的灾难。
+让我们以标准 Session 为例，顺着调用链，一路击穿 Java 层，深入 C++ HAL 层！
 
-通过**策略模式 (Strategy Pattern)** 抽象出不同的 `Session` 类，系统实现了极其优雅的解耦：
-*   你要日常预览？用 `CameraCaptureSession`。
-*   你要 240fps 不卡顿？用 `HighSpeedSession` 降低 IPC 频次。
-*   你要厂商的高级算法？挂载 `ExtensionSession` 代理。
-*   你要后台处理防丢图？调用 `OfflineSession` 完成进程交接。
+### 👣 Step 1：App 层的发起
+我们在应用层通常会这么写现代 Android API：
+```java
+// 将 Surface 包装，指定 Session 类型并下发请求
+SessionConfiguration sessionConfig = new SessionConfiguration(
+    SessionConfiguration.SESSION_REGULAR, outputs, executor, stateCallback);
+mCameraDevice.createCaptureSession(sessionConfig);
+```
 
-作为高级开发者，当我们懂得了每一种“管道”底层是如何搭建流水线、如何分配内存、如何调度线程的，面对再奇葩的业务需求，我们都能一击命中，写出最优雅的 Camera 代码！
+### 👣 Step 2：Java 层向底层的跨进程呼叫 (`CameraDeviceImpl.java`)
+调用最终会走到 Framework 的 `CameraDeviceImpl`。此时，Java 层的代理人并没有立刻 `new` 一个 Session 对象，而是带着你的 `Surface` 去底层申请内存了。
+
+```java
+// 源码位置：CameraDeviceImpl.java
+
+public boolean configureStreamsChecked(InputConfiguration inputConfig,
+        List<OutputConfiguration> outputs, int operatingMode) {
+    try {
+        // 1. 跨进程通话开始：告诉底层 C++，我要开始配置流了
+        mRemoteDevice.beginConfigure();
+
+        // 2. 遍历你传进来的每一个 Surface
+        for (OutputConfiguration outConfig : outputs) {
+            // 告诉底层：给我建一条新的输出水管
+            int streamId = mRemoteDevice.createStream(outConfig);
+            mConfiguredOutputs.put(streamId, outConfig); 
+        }
+
+        // 3. 告诉底层 C++：我的水管需求提完了，你去干活（分配物理内存）吧！
+        mRemoteDevice.endConfigure(operatingMode, null, ...);
+        return true;
+    } catch (RemoteException e) {
+        return false;
+    }
+}
+```
+> **📌 敲黑板：** `beginConfigure`、`createStream`、`endConfigure` 是三个极其核心的 IPC Binder 调用。你的 Java `Surface` 就在这一步被送到了底层的 C++ `cameraserver` 进程。
+
+### 👣 Step 3：C++ 底层接管，搭建硬件流水线 (`Camera3Device.cpp`)
+现在，代码执行流越过了语言边界，来到了 C++ 层。底层的 `Camera3Device` 收到 `endConfigure` 信号后，开始真正的体力劳动。
+
+```cpp
+// 源码位置：frameworks/av/services/camera/libcameraservice/device3/Camera3Device.cpp
+
+binder::Status Camera3Device::endConfigure(int operatingMode, ...) {
+    Mutex::Autolock il(mInterfaceLock);
+
+    // 1. 整理 App 传过来的所有输出流 (Streams)
+    camera_stream_configuration_t streamList;
+    streamList.num_streams = mOutputStreams.size();
+    streamList.streams = mOutputStreams.data();
+
+    // 2. 🚨 终极调用：向 HAL 硬件抽象层下达指令！
+    // mHal3Device 代表的是具体手机厂商（高通/联发科等）的硬件驱动接口
+    status_t res = mHal3Device->ops->configure_streams(mHal3Device, &streamList);
+
+    if (res == OK) {
+        // 3. 硬件配置成功！开始为每个流分配 GraphicBuffer 共享物理内存
+        for (size_t i = 0; i < mOutputStreams.size(); i++) {
+            camera3_stream_t *dstStream = mOutputStreams[i];
+            
+            // 通知 Android 的图形系统 (BufferQueue) 去分配真正的连续物理内存空间！
+            res = dstStream->finishConfiguration();
+        }
+    }
+    return binder::Status::ok();
+}
+```
+
+### 💡 深度剖析：底层的“商务谈判”
+在 C++ 层，`mHal3Device->ops->configure_streams` 实际上是一场 **Android 系统服务与底层 ISP 硬件芯片的商务谈判**！
+
+*   **系统告诉硬件**：“App 需要一个 1080P 的预览流（YUV格式）和一个 4K 的拍照流（JPEG格式）。”
+*   **硬件评估后回答**：“没问题。但为了保证不卡顿，1080P 的流你需要给我分配 **3 块**内存轮换池，4K 的流你需要分配 **2 块**内存，而且必须是底层连续的 DMA 内存。”
+*   **谈判完成后**：C++ 层调用 `finishConfiguration`，严格按照硬件芯片提出的要求，向 Android 系统申请了真正的物理内存块（`GraphicBuffer`）。
+
+当这一切在底层全部就绪，C++ 返回 OK，Java 层才会最终执行 `new CameraCaptureSessionImpl(...)`，并触发你 App 中的 `onConfigured` 回调！
+
+---
+
+## 🎯 架构总结：重新认识 Session
+
+经过这番宏观到微观、Java 到 C++ 的全链路源码巡礼，我们可以给 Session 下一个最硬核的定义了：
+
+1. **在宏观架构上（Java 层）**：它是 Google 采用**策略模式**的典范。通过拆分标准、高速、OEM 扩展、离线四大 Session，完美解耦了日益复杂的影像业务需求。它是你下发 `CaptureRequest` 的**队列管理器**。
+2. **在微观本质上（C++ 层）**：创建 Session 是一次**深度的硬件资源分配行为**。它将 App 层的 `Surface` 转化为了硬件认可的数据流，并完成了最消耗系统性能的动作——**GraphicBuffer 共享内存的协商与分配**。
+
+这也完美解释了：**为什么 `createCaptureSession` 是一个极其耗时的异步操作（通常需要几百毫秒）？** 因为它在底层不仅要跨进程，还要和硬件驱动讨价还价、申请海量的连续物理内存！
+
+掌握了这些，以后当你在项目中写下 `createCaptureSession` 时，你的视野早已穿透了屏幕，直达主板上那颗飞速运转的 ISP 芯片！
 
 ---
 > **💬 互动环节**
-> 通过直接阅读 Android 16 源码，你是不是对 Camera 架构有了全新的降维打击感？你目前的项目中用到了哪几种 Session？遇到了哪些坑？欢迎在评论区留言切磋！
+> 顺着这条源码链路追踪下来，你是否有一种“任督二脉被打通”的感觉？你有没有遇到过 Session 创建失败（onConfigureFailed）的坑？往往是因为分辨率配置超出了硬件上限！欢迎在评论区分享你的踩坑经验！
 ```
