@@ -1,3 +1,12 @@
+---
+layout: post
+title: "深入底层：Android Camera Framework 源码硬核解析（二） cameraManager"
+date: 2026-07-07 10:00:00 +0800
+categories: [Android底层, 源码解析]
+tags: [Camera2, Framework, Binder, 性能优化]
+---
+
+
 ***
 
 # 深入底层：Android Camera2 Framework 源码硬核解析 —— openCamera 背后发生了什么？
