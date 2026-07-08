@@ -1,7 +1,4 @@
 ---
-
-```yaml
----
 layout: post
 title: "深入底层：Android Camera Framework 源码硬核解析（三）—— 揭秘 Camera2 目录的四大阵营"
 date: 2026-07-09 10:00:00 +0800
